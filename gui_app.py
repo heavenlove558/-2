@@ -152,6 +152,130 @@ class EditableTable(ttk.Frame):
 
 
 # ============================================================
+# 历史记录管理对话框
+# ============================================================
+class HistoryDialog(tk.Toplevel):
+    """历史记录浏览器——列出保存的记录，支持加载/重命名/删除"""
+
+    def __init__(self, app):
+        super().__init__(app.root)
+        self.app = app
+        self.title('历史记录管理')
+        self.geometry('520x400')
+        self.resizable(True, True)
+        self.transient(app.root)
+        self.grab_set()
+
+        # 记录列表
+        list_frame = ttk.Frame(self, padding=10)
+        list_frame.pack(fill='both', expand=True)
+
+        ttk.Label(list_frame, text='已保存的模拟记录:',
+                  font=('', 10, 'bold')).pack(anchor='w')
+
+        list_inner = ttk.Frame(list_frame)
+        list_inner.pack(fill='both', expand=True, pady=5)
+
+        scrollbar = ttk.Scrollbar(list_inner)
+        scrollbar.pack(side='right', fill='y')
+
+        self.listbox = tk.Listbox(list_inner, yscrollcommand=scrollbar.set,
+                                   font=('Consolas', 10), selectmode='single')
+        self.listbox.pack(side='left', fill='both', expand=True)
+        scrollbar.config(command=self.listbox.yview)
+
+        self.listbox.bind('<Double-1>', lambda e: self._load_selected())
+        self.listbox.bind('<Delete>', lambda e: self._delete_selected())
+        self.listbox.bind('<F2>', lambda e: self._rename_selected())
+
+        # 按钮
+        btn_frame = ttk.Frame(list_frame)
+        btn_frame.pack(fill='x', pady=(5, 0))
+
+        ttk.Button(btn_frame, text='加载', command=self._load_selected).pack(side='left', padx=2)
+        ttk.Button(btn_frame, text='重命名 (F2)', command=self._rename_selected).pack(side='left', padx=2)
+        ttk.Button(btn_frame, text='删除 (Del)', command=self._delete_selected).pack(side='left', padx=2)
+        ttk.Button(btn_frame, text='关闭', command=self.destroy).pack(side='right', padx=2)
+
+        # 刷新
+        self._refresh()
+
+    def _get_files(self):
+        d = self.app._save_dir()
+        if not os.path.isdir(d):
+            return []
+        return sorted([f for f in os.listdir(d) if f.endswith('.json')],
+                       key=lambda f: os.path.getmtime(os.path.join(d, f)),
+                       reverse=True)
+
+    def _refresh(self):
+        self.listbox.delete(0, 'end')
+        self._records = []
+        for fname in self._get_files():
+            fpath = os.path.join(self.app._save_dir(), fname)
+            try:
+                with open(fpath, 'r', encoding='utf-8') as f:
+                    r = __import__('json').load(f)
+                ts = r.get('timestamp', '?')
+                has_res = ' [有结果]' if 'results' in r else ''
+                self.listbox.insert('end', '  {}  |  {}{}'.format(
+                    r.get('name', fname), ts, has_res))
+                self._records.append((fname, r))
+            except Exception:
+                self.listbox.insert('end', '  {} (损坏)'.format(fname))
+                self._records.append((fname, None))
+
+    def _get_selected(self):
+        sel = self.listbox.curselection()
+        if not sel:
+            messagebox.showwarning('未选择', '请先选择一条记录')
+            return None
+        idx = sel[0]
+        return self._records[idx]
+
+    def _load_selected(self):
+        entry = self._get_selected()
+        if not entry:
+            return
+        fname, record = entry
+        if record is None:
+            messagebox.showerror('文件损坏', '该记录文件已损坏，无法加载')
+            return
+        self.app._load_record(record)
+        self.destroy()
+
+    def _rename_selected(self):
+        entry = self._get_selected()
+        if not entry:
+            return
+        fname, record = entry
+        old_path = os.path.join(self.app._save_dir(), fname)
+        from tkinter import simpledialog
+        new = simpledialog.askstring('重命名', '新名称:', parent=self,
+                                      initialvalue=record.get('name', fname))
+        if not new or new == record.get('name'):
+            return
+        safe = ''.join(c if c.isalnum() or c in '._- ' else '_' for c in new)
+        new_path = os.path.join(self.app._save_dir(), safe + '.json')
+        if os.path.exists(new_path) and new_path != old_path:
+            messagebox.showerror('重命名失败', '"{}" 已存在'.format(new))
+            return
+        os.rename(old_path, new_path)
+        self._refresh()
+
+    def _delete_selected(self):
+        entry = self._get_selected()
+        if not entry:
+            return
+        fname, record = entry
+        name = record.get('name', fname) if record else fname
+        if not messagebox.askyesno('确认删除', '确定删除记录 "{}"?'.format(name)):
+            return
+        os.remove(os.path.join(self.app._save_dir(), fname))
+        self._refresh()
+
+
+# ============================================================
 # 主应用
 # ============================================================
 class SuckerRodApp:
@@ -221,6 +345,10 @@ class SuckerRodApp:
 
         ttk.Button(bottom_frame, text='运行模拟',
                    command=self._run_simulation).pack(side='left', padx=5)
+        ttk.Button(bottom_frame, text='保存记录',
+                   command=self._save_record).pack(side='left', padx=5)
+        ttk.Button(bottom_frame, text='历史记录',
+                   command=self._open_history).pack(side='left', padx=5)
 
         self.status_var = tk.StringVar(value='就绪')
         status_label = ttk.Label(bottom_frame, textvariable=self.status_var,
@@ -690,8 +818,86 @@ class SuckerRodApp:
         thread.start()
 
     # ============================================================
-    # 更新图表（带错误保护）
+    # 历史记录管理
     # ============================================================
+    def _save_dir(self):
+        d = os.path.join(os.path.dirname(__file__), 'saved_runs')
+        os.makedirs(d, exist_ok=True)
+        return d
+
+    def _save_record(self):
+        """保存当前参数和结果为一条历史记录"""
+        from tkinter import simpledialog
+        name = simpledialog.askstring('保存记录', '请输入记录名称:', parent=self.root)
+        if not name:
+            return
+
+        # 收集数据
+        record = {
+            'name': name,
+            'timestamp': __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            'trajectory': self.traj_table.get_all_data(),
+            'rod_combo': self.rod_table.get_all_data(),
+            'tubing_combo': self.tubing_table.get_all_data(),
+            'prod_params': {k: v.get() for k, v in self.prod_entries.items()},
+            'other_params': {k: v.get() for k, v in self.other_entries.items()},
+        }
+        # 模拟结果（如果有）
+        if self.sim_results:
+            summary = {}
+            for label, r in self.sim_results.items():
+                summary[label] = {
+                    'neutral_depth': round(float(r['neutral_depth']), 1),
+                    'P_up_max_kN': round(float(r['P_up'].max() / 1000.0), 1),
+                    'P_down_min_kN': round(float(r['P_down'].min() / 1000.0), 1),
+                    'max_sigma_bend_MPa': round(float(r['sigma_bend'].max()), 2),
+                }
+            record['results'] = summary
+
+        # 写入文件
+        safe_name = ''.join(c if c.isalnum() or c in '._- ' else '_' for c in name)
+        fpath = os.path.join(self._save_dir(), safe_name + '.json')
+        with open(fpath, 'w', encoding='utf-8') as f:
+            __import__('json').dump(record, f, ensure_ascii=False, indent=2)
+
+        self.status_var.set('已保存: {}'.format(name))
+        messagebox.showinfo('保存成功', '记录 "{}" 已保存'.format(name))
+
+    def _open_history(self):
+        """打开历史记录管理对话框"""
+        HistoryDialog(self)
+
+    def _load_record(self, record):
+        """加载一条历史记录到当前界面"""
+        # 井眼轨迹
+        if record.get('trajectory'):
+            self.traj_table.set_data(record['trajectory'])
+            self.traj_file_label.config(text='已加载: {}'.format(record.get('name', '?')),
+                                         foreground='blue')
+        # 杆柱组合
+        if record.get('rod_combo'):
+            self.rod_table.set_data(record['rod_combo'])
+        # 油管组合
+        if record.get('tubing_combo'):
+            self.tubing_table.set_data(record['tubing_combo'])
+        # 生产参数
+        for k, v in record.get('prod_params', {}).items():
+            if k in self.prod_entries:
+                self.prod_entries[k].delete(0, 'end')
+                self.prod_entries[k].insert(0, v)
+        # 其他参数
+        for k, v in record.get('other_params', {}).items():
+            if k in self.other_entries:
+                self.other_entries[k].delete(0, 'end')
+                self.other_entries[k].insert(0, v)
+
+        self.status_var.set('已加载记录: {}'.format(record.get('name', '?')))
+        messagebox.showinfo('加载成功',
+            '已加载 "{}"\n时间: {}\n含模拟结果: {}'.format(
+                record.get('name', '?'),
+                record.get('timestamp', '?'),
+                '是' if 'results' in record else '否'))
+
     def _safe_update(self, trajectory, all_results, rod_combo):
         """带错误保护的图表更新"""
         try:
