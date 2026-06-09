@@ -1,0 +1,16 @@
+[OK] Python import
+[OK] tkinter
+[OK] numpy
+[OK] scipy
+[OK] matplotlib + TkAgg
+[OK] matplotlib Figure
+[OK] matplotlib Tk Canvas
+[OK] pandas + openpyxl
+[OK] 项目 parameters
+[OK] 项目 well_trajectory
+[OK] 项目 force_model
+[OK] 项目 visualization
+[OK] 项目 gui_app (导入)
+
+========================================
+Result: ALL 13 PASS
