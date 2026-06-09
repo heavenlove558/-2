@@ -7,9 +7,7 @@
 """
 import sys
 import os
-import io
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-
+import traceback
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import numpy as np
@@ -742,4 +740,19 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception as e:
+        # 写入错误日志
+        err_msg = ''.join(traceback.format_exc())
+        log_path = os.path.join(os.path.dirname(__file__), 'gui_error.log')
+        with open(log_path, 'w', encoding='utf-8') as f:
+            f.write(err_msg)
+        # 弹出错误对话框
+        try:
+            from tkinter import messagebox
+            messagebox.showerror('启动失败', f'错误已写入 gui_error.log\n\n{str(e)}')
+        except Exception:
+            pass
+        print(err_msg)
+        sys.exit(1)
