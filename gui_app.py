@@ -270,44 +270,115 @@ class SuckerRodApp:
         try:
             if file_path.endswith('.csv'):
                 import csv as csv_module
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    reader = csv_module.DictReader(f)
-                    data = []
-                    for row in reader:
-                        data.append([
-                            float(row.get('depth_m', row.get('井深', 0))),
-                            float(row.get('inclination_deg', row.get('井斜角', 0))),
-                            float(row.get('azimuth_deg', row.get('方位角', 0))),
-                        ])
+                # 尝试多种编码
+                raw_data = []
+                for enc in ['utf-8', 'gbk', 'gb2312', 'utf-8-sig']:
+                    try:
+                        with open(file_path, 'r', encoding=enc) as f:
+                            reader = csv_module.DictReader(f)
+                            raw_data = []
+                            for row in reader:
+                                raw_data.append(row)
+                        break
+                    except (UnicodeDecodeError, UnicodeError):
+                        continue
+                if not raw_data:
+                    raise ValueError('无法读取CSV文件，请确认编码为UTF-8或GBK')
+
+                # 自动匹配列名
+                headers = list(raw_data[0].keys())
+                col_map = self._match_columns(headers)
+                data = self._parse_rows(raw_data, col_map)
+
             else:
                 import pandas as pd
                 df = pd.read_excel(file_path)
-                # 尝试自动匹配列名
-                col_map = {}
-                for col in df.columns:
-                    cl = col.lower()
-                    if 'depth' in cl or '井深' in col or 'md' in cl:
-                        col_map['depth'] = col
-                    elif 'incl' in cl or '井斜' in col or 'dev' in cl:
-                        col_map['incl'] = col
-                    elif 'azim' in cl or '方位' in col:
-                        col_map['azim'] = col
-                if len(col_map) < 3:
-                    # fallback: assume first 3 columns
-                    cols = df.columns[:3]
-                    col_map = {'depth': cols[0], 'incl': cols[1], 'azim': cols[2]}
-                data = [[float(df[col_map['depth']].iloc[i]),
-                         float(df[col_map['incl']].iloc[i]),
-                         float(df[col_map['azim']].iloc[i])] for i in range(len(df))]
+
+                # 跳过全空行
+                df = df.dropna(how='all')
+
+                # 如果第一行看起来像标题（包含中文），跳过
+                cols_str = [str(c).strip() for c in df.columns]
+                headers = cols_str
+                col_map = self._match_columns(headers)
+
+                # 提取数据
+                data = []
+                for i in range(len(df)):
+                    try:
+                        depth = float(df[col_map['depth']].iloc[i])
+                        incl = float(df[col_map['incl']].iloc[i])
+                        azim = float(df[col_map['azim']].iloc[i])
+                        if not (np.isnan(depth) or np.isnan(incl) or np.isnan(azim)):
+                            data.append([depth, incl, azim])
+                    except (ValueError, TypeError, KeyError):
+                        continue
+
+            # 校验
+            if len(data) < 3:
+                raise ValueError(
+                    '有效数据行不足（需要至少3个测点）。\n'
+                    '请确认Excel列名包含: 井深/Depth, 井斜角/Incl, 方位角/Azim\n'
+                    '当前识别到的列名: {}'.format(headers))
+
+            # 检查井深是否递增
+            depths = [r[0] for r in data]
+            if not all(depths[i] < depths[i+1] for i in range(len(depths)-1)):
+                raise ValueError(
+                    '井深数据必须严格递增！\n'
+                    '发现非递增数据点，请检查数据排序。')
 
             self.traj_table.set_data(data)
             fname = os.path.basename(file_path)
-            self.traj_file_label.config(text=fname, foreground='green')
+            self.traj_file_label.config(text='{} ({}点)'.format(fname, len(data)),
+                                         foreground='green')
             self.trajectory_file = file_path
-            messagebox.showinfo('导入成功', f'已导入 {len(data)} 行测斜数据')
+            messagebox.showinfo('导入成功',
+                '已导入 {} 行测斜数据\n井深范围: {:.0f} - {:.0f} m'.format(
+                    len(data), depths[0], depths[-1]))
 
         except Exception as e:
-            messagebox.showerror('导入失败', f'无法读取文件:\n{str(e)}')
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror('导入失败', str(e))
+
+    def _match_columns(self, headers):
+        """智能匹配列名：井深、井斜角、方位角"""
+        col_map = {}
+        for col in headers:
+            cl = str(col).strip().lower()
+            # 井深列
+            if any(kw in cl for kw in ['depth', 'md', '井深', '测深', '深度', '斜深']):
+                col_map['depth'] = col
+            # 井斜角列
+            elif any(kw in cl for kw in ['incl', 'dev', '井斜', '斜度', '倾角', 'inc']):
+                col_map['incl'] = col
+            # 方位角列
+            elif any(kw in cl for kw in ['azim', 'azi', '方位', 'azm']):
+                col_map['azim'] = col
+
+        # 回退：如果匹配不足3列，假设前3列为 depth, incl, azim
+        if len(col_map) < 3:
+            remain = [c for c in headers if c not in col_map.values()]
+            for key, h in zip(['depth', 'incl', 'azim'], headers[:3]):
+                if key not in col_map:
+                    col_map[key] = h
+
+        return col_map
+
+    def _parse_rows(self, raw_data, col_map):
+        """从CSV字典列表提取数值"""
+        data = []
+        for row in raw_data:
+            try:
+                depth = float(row.get(col_map['depth'], np.nan))
+                incl = float(row.get(col_map['incl'], np.nan))
+                azim = float(row.get(col_map['azim'], np.nan))
+                if not (np.isnan(depth) or np.isnan(incl) or np.isnan(azim)):
+                    data.append([depth, incl, azim])
+            except (ValueError, TypeError, KeyError):
+                continue
+        return data
 
     def _load_default_trajectory(self):
         """加载 SP10-9 示例数据"""
@@ -527,14 +598,34 @@ class SuckerRodApp:
         return {'prod': prod, 'other': other}
 
     def _get_trajectory_from_table(self):
-        """从表格读取井眼轨迹数据"""
+        """从表格读取井眼轨迹数据（带校验）"""
         data = self.traj_table.get_all_data()
         if len(data) < 3:
+            messagebox.showerror('数据不足',
+                '测斜数据至少需要3个点，当前仅有 {} 个有效数据行。\n'
+                '请先导入Excel文件或点击"加载SP10-9默认数据"。'.format(len(data)))
             return None
+
         depths = np.array([r[0] for r in data])
         incls = np.array([r[1] for r in data])
         azims = np.array([r[2] for r in data])
-        return wt.build_well_trajectory(depths, incls, azims, dl=5.0)
+
+        # 检查井深递增
+        diffs = np.diff(depths)
+        if np.any(diffs <= 0):
+            bad_idx = np.where(diffs <= 0)[0]
+            messagebox.showerror('数据错误',
+                '井深数据必须严格递增！\n'
+                '第{}行附近存在非递增数据点。\n'
+                '请在表格中修正或重新导入。'.format(bad_idx[0] + 1))
+            return None
+
+        try:
+            return wt.build_well_trajectory(depths, incls, azims, dl=5.0)
+        except Exception as e:
+            messagebox.showerror('轨迹计算失败',
+                '三次样条插值失败:\n{}\n请检查数据是否有突变。'.format(str(e)))
+            return None
 
     def _get_rod_combo_from_table(self):
         """从表格读取杆柱组合"""
