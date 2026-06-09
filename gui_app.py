@@ -660,6 +660,18 @@ class SuckerRodApp:
     def _build_wear_risk_tab(self):
         self.wear_risk_frame = ttk.Frame(self.output_notebook)
         self.output_notebook.add(self.wear_risk_frame, text=' 偏磨风险 ')
+
+        # 泵径选择器
+        ctrl_bar = ttk.Frame(self.wear_risk_frame)
+        ctrl_bar.pack(fill='x', padx=5, pady=(5, 0))
+        ttk.Label(ctrl_bar, text='泵径:').pack(side='left')
+        self.wear_pump_var = tk.StringVar(value='44')
+        self.wear_pump_combo = ttk.Combobox(ctrl_bar, textvariable=self.wear_pump_var,
+                                              values=[], state='readonly', width=6)
+        self.wear_pump_combo.pack(side='left', padx=5)
+        self.wear_pump_combo.bind('<<ComboboxSelected>>',
+                                   lambda e: self._draw_wear_risk())
+
         self._create_output_canvas(self.wear_risk_frame, 'wear_risk')
 
     def _create_output_canvas(self, parent, name):
@@ -898,6 +910,61 @@ class SuckerRodApp:
                 record.get('timestamp', '?'),
                 '是' if 'results' in record else '否'))
 
+    def _draw_wear_risk(self):
+        """根据当前选中的泵径重绘偏磨风险图表"""
+        if not hasattr(self, '_wear_results') or not self._wear_results:
+            return
+        dia = self.wear_pump_var.get()
+        if dia not in self._wear_results:
+            return
+
+        trajectory = self._wear_trajectory
+        result = self._wear_results[dia]
+        depths = trajectory['depths']
+
+        fig = self.fig_wear_risk
+        fig.clear()
+
+        ax_bend = fig.add_subplot(131)
+        ax_bend.plot(result['sigma_bend'], depths, 'r-', linewidth=1.2)
+        ax_bend.fill_betweenx(depths, 0, result['sigma_bend'], alpha=0.15, color='red')
+        ax_bend.invert_yaxis()
+        ax_bend.set_xlabel('弯曲应力 / MPa')
+        ax_bend.set_title('弯曲应力 ({}mm)'.format(dia))
+        ax_bend.grid(True, alpha=0.3)
+
+        ax_N = fig.add_subplot(132)
+        N_max = np.maximum(result['N_rt_up'], result['N_rt_down'])
+        ax_N.plot(N_max / 1000.0, depths, 'purple', linewidth=1.2)
+        ax_N.fill_betweenx(depths, 0, N_max / 1000.0, alpha=0.15, color='purple')
+        ax_N.invert_yaxis()
+        ax_N.set_xlabel('支持力 / kN')
+        ax_N.set_title('最大支持力 ({}mm)'.format(dia))
+        ax_N.grid(True, alpha=0.3)
+
+        ax_risk = fig.add_subplot(133)
+        K_norm = trajectory['K_deg30m'] / max(trajectory['K_deg30m'].max(), 1e-12)
+        sigma_norm = result['sigma_bend'] / max(result['sigma_bend'].max(), 1e-12)
+        N_norm = N_max / max(N_max.max(), 1e-12)
+        risk = 0.3 * K_norm + 0.3 * sigma_norm + 0.4 * N_norm
+        ax_risk.plot(risk, depths, 'k-', linewidth=1.5)
+        ax_risk.fill_betweenx(depths, 0, risk, alpha=0.2, color='black',
+                               where=(risk > 0.3))
+        ax_risk.invert_yaxis()
+        ax_risk.set_xlabel('风险指数')
+        ax_risk.set_title('偏磨综合风险')
+        ax_risk.set_xlim(0, 1)
+        ax_risk.grid(True, alpha=0.3)
+
+        for ax in [ax_bend, ax_N, ax_risk]:
+            ax.axhline(y=result['neutral_depth'], color='orange',
+                       linestyle='--', linewidth=0.8, alpha=0.7)
+
+        fig.suptitle('偏磨风险综合分析 ({}mm泵)'.format(dia),
+                     fontsize=12, fontweight='bold')
+        fig.tight_layout()
+        self.canvas_wear_risk.draw()
+
     def _safe_update(self, trajectory, all_results, rod_combo):
         """带错误保护的图表更新"""
         try:
@@ -996,49 +1063,15 @@ class SuckerRodApp:
         self.canvas_dogleg.draw()
 
         # ---- 图表3: 偏磨风险 ----
-        fig3 = self.fig_wear_risk
-        fig3.clear()
-
-        ax_bend = fig3.add_subplot(131)
-        result_44 = all_results['44']
-        ax_bend.plot(result_44['sigma_bend'], depths, 'r-', linewidth=1.2)
-        ax_bend.fill_betweenx(depths, 0, result_44['sigma_bend'], alpha=0.15, color='red')
-        ax_bend.invert_yaxis()
-        ax_bend.set_xlabel('弯曲应力 / MPa')
-        ax_bend.set_title('弯曲应力 (44mm泵)')
-        ax_bend.grid(True, alpha=0.3)
-
-        ax_N = fig3.add_subplot(132)
-        N_max = np.maximum(result_44['N_rt_up'], result_44['N_rt_down'])
-        ax_N.plot(N_max / 1000.0, depths, 'purple', linewidth=1.2)
-        ax_N.fill_betweenx(depths, 0, N_max / 1000.0, alpha=0.15, color='purple')
-        ax_N.invert_yaxis()
-        ax_N.set_xlabel('支持力 / kN')
-        ax_N.set_title('最大支持力 (44mm泵)')
-        ax_N.grid(True, alpha=0.3)
-
-        ax_risk = fig3.add_subplot(133)
-        K_norm = trajectory['K_deg30m'] / max(trajectory['K_deg30m'].max(), 1e-12)
-        sigma_norm = result_44['sigma_bend'] / max(result_44['sigma_bend'].max(), 1e-12)
-        N_norm = N_max / max(N_max.max(), 1e-12)
-        risk = 0.3 * K_norm + 0.3 * sigma_norm + 0.4 * N_norm
-        ax_risk.plot(risk, depths, 'k-', linewidth=1.5)
-        ax_risk.fill_betweenx(depths, 0, risk, alpha=0.2, color='black',
-                               where=(risk > 0.3))
-        ax_risk.invert_yaxis()
-        ax_risk.set_xlabel('风险指数')
-        ax_risk.set_title('偏磨综合风险')
-        ax_risk.set_xlim(0, 1)
-        ax_risk.grid(True, alpha=0.3)
-
-        # 标注
-        for ax in [ax_bend, ax_N, ax_risk]:
-            ax.axhline(y=result_44['neutral_depth'], color='orange',
-                       linestyle='--', linewidth=0.8, alpha=0.7)
-
-        fig3.suptitle('偏磨风险综合分析', fontsize=12, fontweight='bold')
-        fig3.tight_layout()
-        self.canvas_wear_risk.draw()
+        # 存储数据供切换泵径时重绘
+        self._wear_trajectory = trajectory
+        self._wear_results = all_results
+        # 更新泵径选择器选项
+        dias = list(all_results.keys())
+        self.wear_pump_combo['values'] = dias
+        if self.wear_pump_var.get() not in dias:
+            self.wear_pump_var.set(dias[-1])  # 默认最大泵径
+        self._draw_wear_risk()
 
 
 # ============================================================
