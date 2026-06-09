@@ -587,18 +587,32 @@ class SuckerRodApp:
                     all_results[f'{dia*1000:.0f}'] = result
 
                 # 主线程中更新UI
-                self.root.after(0, lambda: self._update_outputs(
-                    trajectory, all_results, rod_combo))
-                self.root.after(0, lambda: self.status_var.set('模拟完成'))
+                self.root.after(0, lambda: self._safe_update(trajectory, all_results, rod_combo))
 
             except Exception as e:
                 import traceback
                 traceback.print_exc()
-                self.root.after(0, lambda: self.status_var.set(f'错误: {str(e)[:80]}'))
+                self.root.after(0, lambda: self.status_var.set('Error: {}'.format(str(e)[:80])))
                 self.root.after(0, lambda: messagebox.showerror('模拟错误', str(e)))
 
         thread = threading.Thread(target=_run, daemon=True)
         thread.start()
+
+    # ============================================================
+    # 更新图表（带错误保护）
+    # ============================================================
+    def _safe_update(self, trajectory, all_results, rod_combo):
+        """带错误保护的图表更新"""
+        try:
+            self._update_outputs(trajectory, all_results, rod_combo)
+            self.status_var.set('模拟完成')
+        except Exception as e:
+            import traceback
+            err_msg = traceback.format_exc()
+            print(err_msg, file=sys.stderr)
+            self.status_var.set('图表更新失败: {}'.format(str(e)[:60]))
+            messagebox.showerror('图表错误',
+                '计算完成但图表绘制失败:\n\n{}\n\n详情见终端输出'.format(str(e)))
 
     # ============================================================
     # 更新图表
