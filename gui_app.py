@@ -382,6 +382,9 @@ class SuckerRodApp:
 
         ttk.Label(frame, text='油井生产参数:', font=('', 9, 'bold')).pack(anchor='w', pady=(0, 10))
 
+        grid_frame = ttk.Frame(frame)
+        grid_frame.pack(fill='both', expand=True)
+
         params = [
             ('产液量 m3/d', '17.0'),
             ('产油量 t/d', '3.23'),
@@ -397,9 +400,9 @@ class SuckerRodApp:
 
         for i, (label, default) in enumerate(params):
             row, col = divmod(i, 2)
-            ttk.Label(frame, text=label + ':').grid(
+            ttk.Label(grid_frame, text=label + ':').grid(
                 row=row, column=col * 2, sticky='e', padx=5, pady=4)
-            entry = ttk.Entry(frame, width=12)
+            entry = ttk.Entry(grid_frame, width=12)
             entry.insert(0, default)
             entry.grid(row=row, column=col * 2 + 1, sticky='w', padx=5, pady=4)
             self.prod_entries[label] = entry
@@ -413,6 +416,9 @@ class SuckerRodApp:
 
         ttk.Label(frame, text='材料与模型参数（通常不需修改）:',
                   font=('', 9, 'bold')).pack(anchor='w', pady=(0, 10))
+
+        grid_frame = ttk.Frame(frame)
+        grid_frame.pack(fill='both', expand=True)
 
         other = [
             ('钢弹性模量 GPa', '210'),
@@ -428,9 +434,9 @@ class SuckerRodApp:
 
         for i, (label, default) in enumerate(other):
             row, col = divmod(i, 2)
-            ttk.Label(frame, text=label + ':').grid(
+            ttk.Label(grid_frame, text=label + ':').grid(
                 row=row, column=col * 2, sticky='e', padx=5, pady=4)
-            entry = ttk.Entry(frame, width=12)
+            entry = ttk.Entry(grid_frame, width=12)
             entry.insert(0, default)
             entry.grid(row=row, column=col * 2 + 1, sticky='w', padx=5, pady=4)
             self.other_entries[label] = entry
