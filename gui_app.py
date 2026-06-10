@@ -1106,10 +1106,15 @@ class SuckerRodApp:
 
     def _draw_inertial(self):
         """绘制冲程转换时的惯性接触力"""
-        if not hasattr(self, '_opt_data') or not self._opt_data:
+        if not hasattr(self, '_opt_data'):
+            print('[DEBUG] _opt_data missing')
+            return
+        if not self._opt_data:
+            print('[DEBUG] _opt_data empty')
             return
         inertial = self._opt_data.get('inertial')
         if inertial is None:
+            print('[DEBUG] inertial key missing from _opt_data, keys:', list(self._opt_data.keys()))
             return
 
         depths = inertial['depths']
@@ -1255,6 +1260,9 @@ class SuckerRodApp:
     def _safe_update(self, trajectory, all_results, rod_combo):
         """带错误保护的图表更新"""
         try:
+            has_opt = hasattr(self, '_opt_data')
+            keys = list(self._opt_data.keys()) if has_opt and self._opt_data else 'N/A'
+            print('[DEBUG] _safe_update: _opt_data exists={}, keys={}'.format(has_opt, keys))
             self._update_outputs(trajectory, all_results, rod_combo)
             self.status_var.set('模拟完成')
         except Exception as e:
