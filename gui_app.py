@@ -17,8 +17,59 @@ import matplotlib
 matplotlib.use('TkAgg')
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
-matplotlib.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'DejaVu Sans']
-matplotlib.rcParams['axes.unicode_minus'] = False
+
+# ---- 中文字体自动检测 ----
+def _setup_chinese_font():
+    """检测系统可用中文字体并配置 matplotlib"""
+    import matplotlib.font_manager as fm
+    import os, glob
+
+    # 删除旧字体缓存（最常见的乱码原因）
+    cache_dir = matplotlib.get_cachedir()
+    for f in glob.glob(os.path.join(cache_dir, 'fontlist*')):
+        try:
+            os.remove(f)
+        except Exception:
+            pass
+
+    # 强制重建
+    try:
+        fm._load_fontmanager(try_read_cache=False)
+    except Exception:
+        pass
+
+    # 候选中文字体列表（Windows / macOS / Linux）
+    candidates = [
+        'Microsoft YaHei', 'SimHei', 'SimSun', 'FangSong', 'KaiTi', 'DengXian',
+        'PingFang SC', 'Heiti SC', 'STHeiti',
+        'WenQuanYi Micro Hei', 'WenQuanYi Zen Hei', 'Noto Sans CJK SC',
+        'Source Han Sans SC', 'AR PL UMing CN', 'DejaVu Sans',
+    ]
+
+    available = set(f.name for f in fm.fontManager.ttflist)
+    chosen = None
+    for name in candidates:
+        if name in available:
+            chosen = name
+            break
+
+    if chosen:
+        matplotlib.rcParams['font.sans-serif'] = [chosen, 'DejaVu Sans']
+        print('Using Chinese font:', chosen)
+    else:
+        # 回退：扫描所有带 "CJK" 或 "Han" 的字体
+        cjk_fonts = [f.name for f in fm.fontManager.ttflist
+                     if any(kw in f.name for kw in ['CJK','Han','Hei','Song','Ming','YaHei'])]
+        if cjk_fonts:
+            matplotlib.rcParams['font.sans-serif'] = cjk_fonts[:3] + ['DejaVu Sans']
+            print('Using CJK fonts:', cjk_fonts[:3])
+        else:
+            matplotlib.rcParams['font.sans-serif'] = ['DejaVu Sans']
+            print('WARNING: No Chinese font found, charts may show garbled text')
+
+    matplotlib.rcParams['axes.unicode_minus'] = False
+
+_setup_chinese_font()
 
 import well_trajectory as wt
 import force_model as fm
