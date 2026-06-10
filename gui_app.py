@@ -895,10 +895,8 @@ class SuckerRodApp:
                     'rod_combo': rod_combo,
                 }
 
-                # 等强度推荐
-                dias_mm = list(set(int(d*1000) for d, _ in rod_combo if d > 0))
-                if len(dias_mm) < 3:
-                    dias_mm = [19, 22, 25]
+                # 等强度推荐（仅使用22mm和19mm杆径）
+                dias_mm = [19, 22]
                 prod_params = prod
                 opt_combo = opt.equal_strength_design(
                     prod_params['pump_diameter'], prod_params['fluid_level'],
