@@ -862,6 +862,16 @@ class SuckerRodApp:
             messagebox.showerror('数据错误', '请先导入或加载井眼轨迹数据！')
             return
 
+        # 截断到泵挂深度（杆柱只到泵，不到井底）
+        pump_depth = params['prod']['pump_depth']
+        mask = trajectory['depths'] <= pump_depth + 1e-6
+        for key in ['depths', 'alpha_rad', 'alpha_deg', 'phi_rad', 'phi_deg',
+                     'K', 'K_deg30m', 'R_curvature']:
+            if key in trajectory:
+                trajectory[key] = trajectory[key][mask]
+        print('Trajectory truncated to pump depth: {:.0f}m, {} nodes'.format(
+            pump_depth, len(trajectory['depths'])))
+
         self.status_var.set('正在运行模拟...')
         self.root.update()
 
