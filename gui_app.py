@@ -338,6 +338,7 @@ class SuckerRodApp:
         self._build_load_tab()
         self._build_dogleg_tab()
         self._build_wear_risk_tab()
+        self._build_optimization_tab()
 
         # ---- 底部按钮 ----
         bottom_frame = ttk.Frame(self.root)
@@ -674,6 +675,23 @@ class SuckerRodApp:
 
         self._create_output_canvas(self.wear_risk_frame, 'wear_risk')
 
+    def _build_optimization_tab(self):
+        frame = ttk.Frame(self.output_notebook)
+        self.output_notebook.add(frame, text=' 杆柱优化 ')
+
+        # 泵径选择
+        ctrl = ttk.Frame(frame)
+        ctrl.pack(fill='x', padx=5, pady=(5, 0))
+        ttk.Label(ctrl, text='泵径:').pack(side='left')
+        self.opt_pump_var = tk.StringVar(value='44')
+        self.opt_pump_combo = ttk.Combobox(ctrl, textvariable=self.opt_pump_var,
+                                             values=[], state='readonly', width=6)
+        self.opt_pump_combo.pack(side='left', padx=5)
+        self.opt_pump_combo.bind('<<ComboboxSelected>>',
+                                  lambda e: self._draw_optimization())
+
+        self._create_output_canvas(frame, 'optimization')
+
     def _create_output_canvas(self, parent, name):
         """在给定的 frame 中创建 matplotlib 画布"""
         setattr(self, f'fig_{name}', Figure(figsize=(7, 5), dpi=100))
@@ -816,6 +834,26 @@ class SuckerRodApp:
                     neutral = fm.find_neutral_point(trajectory['depths'], result['P_down'])
                     result['neutral_depth'] = neutral
                     all_results[f'{dia*1000:.0f}'] = result
+
+                # 疲劳分析
+                import optimization as opt
+                fatigue = opt.analyze_fatigue(all_results, rod_diameters, grade='D')
+                self._opt_data = {
+                    'fatigue': fatigue,
+                    'rod_diameters': rod_diameters,
+                    'rod_combo': rod_combo,
+                }
+
+                # 等强度推荐
+                dias_mm = list(set(int(d*1000) for d, _ in rod_combo if d > 0))
+                if len(dias_mm) < 3:
+                    dias_mm = [19, 22, 25]
+                prod_params = prod
+                opt_combo = opt.equal_strength_design(
+                    prod_params['pump_diameter'], prod_params['fluid_level'],
+                    prod_params['stroke'], prod_params['stroke_rate'],
+                    dias_mm)
+                self._opt_data['opt_combo'] = opt_combo
 
                 # 主线程中更新UI
                 self.root.after(0, lambda: self._safe_update(trajectory, all_results, rod_combo))
@@ -965,6 +1003,92 @@ class SuckerRodApp:
         fig.tight_layout()
         self.canvas_wear_risk.draw()
 
+    def _draw_optimization(self):
+        """绘制杆柱优化图表：应力幅值 + 疲劳寿命 + 等强度推荐"""
+        if not hasattr(self, '_opt_data') or not self._opt_data:
+            return
+        dia_label = self.opt_pump_var.get()
+        fatigue = self._opt_data['fatigue']
+        if dia_label not in fatigue:
+            return
+        f = fatigue[dia_label]
+        rod_diameters = self._opt_data['rod_diameters']
+        depths = np.arange(len(f['sigma_a'])) * 5.0  # approximate
+
+        fig = self.fig_optimization
+        fig.clear()
+
+        # 获取实际井深（从已保存的轨迹数据）
+        depths = np.array(self._opt_data.get('_depths_opt', range(len(f['sigma_a']))))
+
+        # 左: 应力幅值 vs 井深
+        ax1 = fig.add_subplot(221)
+        ax1.plot(f['sigma_a'], depths, 'b-', linewidth=1.5)
+        ax1.fill_betweenx(depths, 0, f['sigma_a'], alpha=0.15, color='blue')
+        ax1.invert_yaxis()
+        ax1.set_xlabel('应力幅值 / MPa')
+        ax1.set_ylabel('井深 / m')
+        ax1.set_title('应力幅值分布 ({}mm泵)'.format(dia_label))
+        ax1.grid(True, alpha=0.3)
+
+        # 右: 疲劳寿命柱状图
+        ax2 = fig.add_subplot(222)
+        pump_labels = list(self._opt_data['fatigue'].keys())
+        years_list = [self._opt_data['fatigue'][k]['years'] for k in pump_labels]
+        colors = ['green' if y > 10 else 'orange' if y > 3 else 'red' for y in years_list]
+        bars = ax2.bar(pump_labels, [min(y, 99) for y in years_list], color=colors)
+        ax2.set_xlabel('泵径 / mm')
+        ax2.set_ylabel('预估疲劳寿命 / 年')
+        ax2.set_title('疲劳寿命对比')
+        for bar, y in zip(bars, years_list):
+            ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
+                     '{:.1f}'.format(y), ha='center', fontsize=8)
+        ax2.axhline(y=3, color='orange', linestyle='--', alpha=0.5, label='3年警戒线')
+        ax2.axhline(y=10, color='green', linestyle='--', alpha=0.5, label='10年目标线')
+        ax2.legend(fontsize=7)
+
+        # 左下: PL 对比
+        ax3 = fig.add_subplot(223)
+        pl_list = [self._opt_data['fatigue'][k]['PL'] for k in pump_labels]
+        colors_pl = ['green' if p < 85 else 'orange' if p < 100 else 'red' for p in pl_list]
+        bars3 = ax3.bar(pump_labels, pl_list, color=colors_pl)
+        ax3.set_xlabel('泵径 / mm')
+        ax3.set_ylabel('应力范围比 PL / %')
+        ax3.set_title('应力范围比 (PL<100% 合格)')
+        ax3.axhline(y=100, color='red', linestyle='--', alpha=0.5, label='100%上限')
+        for bar, p in zip(bars3, pl_list):
+            ax3.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
+                     '{:.0f}%'.format(p), ha='center', fontsize=8)
+        ax3.legend(fontsize=7)
+
+        # 右下: 等强度推荐
+        ax4 = fig.add_subplot(224)
+        ax4.axis('off')
+        opt_combo = self._opt_data.get('opt_combo', [])
+        lines = ['等强度优化推荐杆柱组合:', '']
+        total = sum(L for _, L, _ in opt_combo)
+        for d, L, pct in opt_combo:
+            lines.append('  {}mm × {:.0f}m ({:.0f}%)'.format(d, L, pct))
+        lines.append('')
+        lines.append('总长: {:.0f} m'.format(total))
+        lines.append('')
+        max_sa_label = dia_label
+        if max_sa_label in fatigue:
+            lines.append('最大应力幅: {:.1f} MPa @ {:.0f}m'.format(
+                fatigue[max_sa_label]['max_sigma_a'],
+                fatigue[max_sa_label]['max_sigma_a_depth']))
+            lines.append('预估疲劳寿命: {:.1f} 年'.format(
+                fatigue[max_sa_label]['years']))
+            lines.append('应力范围比 PL: {:.0f}%'.format(
+                fatigue[max_sa_label]['PL']))
+        ax4.text(0.05, 0.95, '\n'.join(lines), transform=ax4.transAxes,
+                 fontsize=9, verticalalignment='top', fontfamily='monospace')
+
+        fig.suptitle('杆柱优化分析 ({}mm泵, D级杆)'.format(dia_label),
+                     fontsize=12, fontweight='bold')
+        fig.tight_layout()
+        self.canvas_optimization.draw()
+
     def _safe_update(self, trajectory, all_results, rod_combo):
         """带错误保护的图表更新"""
         try:
@@ -1066,12 +1190,19 @@ class SuckerRodApp:
         # 存储数据供切换泵径时重绘
         self._wear_trajectory = trajectory
         self._wear_results = all_results
+        # 优化图表也用这些深度
+        if hasattr(self, '_opt_data') and self._opt_data:
+            self._opt_data['_depths_opt'] = trajectory['depths']
         # 更新泵径选择器选项
         dias = list(all_results.keys())
         self.wear_pump_combo['values'] = dias
+        self.opt_pump_combo['values'] = dias
         if self.wear_pump_var.get() not in dias:
-            self.wear_pump_var.set(dias[-1])  # 默认最大泵径
+            self.wear_pump_var.set(dias[-1])
+        if self.opt_pump_var.get() not in dias:
+            self.opt_pump_var.set(dias[-1])
         self._draw_wear_risk()
+        self._draw_optimization()
 
 
 # ============================================================
