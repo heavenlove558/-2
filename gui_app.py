@@ -63,6 +63,16 @@ def _setup_chinese_font():
         print('WARNING: No CJK font found')
 
     matplotlib.rcParams['axes.unicode_minus'] = False
+    # 全局字体大小：缩小坐标轴标注
+    matplotlib.rcParams.update({
+        'font.size': 8,
+        'axes.titlesize': 10,
+        'axes.labelsize': 8,
+        'xtick.labelsize': 7,
+        'ytick.labelsize': 7,
+        'legend.fontsize': 7,
+        'figure.titlesize': 11,
+    })
 
 _setup_chinese_font()
 

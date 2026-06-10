@@ -34,6 +34,15 @@ if _font_paths:
         except Exception: pass
     rcParams['font.sans-serif'] = [fm.FontProperties(fname=_font_paths[0]).get_name(), 'DejaVu Sans']
 rcParams['axes.unicode_minus'] = False
+rcParams.update({
+    'font.size': 8,
+    'axes.titlesize': 10,
+    'axes.labelsize': 8,
+    'xtick.labelsize': 7,
+    'ytick.labelsize': 7,
+    'legend.fontsize': 7,
+    'figure.titlesize': 11,
+})
 
 
 def plot_axial_force(result, save_path='output_axial_force.png'):
