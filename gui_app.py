@@ -20,52 +20,47 @@ from matplotlib.figure import Figure
 
 # ---- 中文字体自动检测 ----
 def _setup_chinese_font():
-    """检测系统可用中文字体并配置 matplotlib"""
+    """直接加载系统字体文件，确保中文正常显示"""
     import matplotlib.font_manager as fm
-    import os, glob
+    import os, glob, shutil
 
-    # 删除旧字体缓存（最常见的乱码原因）
+    # 1. 彻底清除 matplotlib 字体缓存
     cache_dir = matplotlib.get_cachedir()
-    for f in glob.glob(os.path.join(cache_dir, 'fontlist*')):
+    for f in glob.glob(os.path.join(cache_dir, '*')):
         try:
-            os.remove(f)
+            if os.path.isfile(f):
+                os.remove(f)
+            elif os.path.isdir(f) and 'tex' not in f.lower():
+                shutil.rmtree(f, ignore_errors=True)
         except Exception:
             pass
 
-    # 强制重建
-    try:
-        fm._load_fontmanager(try_read_cache=False)
-    except Exception:
-        pass
+    # 2. 直接在系统字体目录查找中文ttf
+    font_paths = glob.glob(r'C:\Windows\Fonts\msyh*.ttc')  # 微软雅黑
+    font_paths += glob.glob(r'C:\Windows\Fonts\simhei.ttf')  # 黑体
+    font_paths += glob.glob(r'C:\Windows\Fonts\simsun*.ttc')  # 宋体
 
-    # 候选中文字体列表（Windows / macOS / Linux）
-    candidates = [
-        'Microsoft YaHei', 'SimHei', 'SimSun', 'FangSong', 'KaiTi', 'DengXian',
-        'PingFang SC', 'Heiti SC', 'STHeiti',
-        'WenQuanYi Micro Hei', 'WenQuanYi Zen Hei', 'Noto Sans CJK SC',
-        'Source Han Sans SC', 'AR PL UMing CN', 'DejaVu Sans',
-    ]
+    if not font_paths:
+        # macOS / Linux
+        font_paths = glob.glob('/System/Library/Fonts/PingFang*.ttc')
+        font_paths += glob.glob('/usr/share/fonts/**/*CJK*.ttf', recursive=True)
 
-    available = set(f.name for f in fm.fontManager.ttflist)
-    chosen = None
-    for name in candidates:
-        if name in available:
-            chosen = name
-            break
+    if font_paths:
+        # 注册字体文件
+        for fp in font_paths:
+            try:
+                fm.fontManager.addfont(fp)
+            except Exception:
+                pass
 
-    if chosen:
-        matplotlib.rcParams['font.sans-serif'] = [chosen, 'DejaVu Sans']
-        print('Using Chinese font:', chosen)
+        # 用文件名（不含扩展名）作为 font family
+        font_name = fm.FontProperties(fname=font_paths[0]).get_name()
+        matplotlib.rcParams['font.family'] = 'sans-serif'
+        matplotlib.rcParams['font.sans-serif'] = [font_name, 'DejaVu Sans']
+        print('Chinese font loaded: {} ({})'.format(font_name, font_paths[0]))
     else:
-        # 回退：扫描所有带 "CJK" 或 "Han" 的字体
-        cjk_fonts = [f.name for f in fm.fontManager.ttflist
-                     if any(kw in f.name for kw in ['CJK','Han','Hei','Song','Ming','YaHei'])]
-        if cjk_fonts:
-            matplotlib.rcParams['font.sans-serif'] = cjk_fonts[:3] + ['DejaVu Sans']
-            print('Using CJK fonts:', cjk_fonts[:3])
-        else:
-            matplotlib.rcParams['font.sans-serif'] = ['DejaVu Sans']
-            print('WARNING: No Chinese font found, charts may show garbled text')
+        matplotlib.rcParams['font.sans-serif'] = ['DejaVu Sans']
+        print('WARNING: No CJK font found')
 
     matplotlib.rcParams['axes.unicode_minus'] = False
 

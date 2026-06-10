@@ -10,13 +10,29 @@
   - 中和点标注
 """
 import numpy as np
+import os, glob, shutil
 import matplotlib
 matplotlib.use('Agg')  # 非交互后端
 import matplotlib.pyplot as plt
+import matplotlib.font_manager as fm
 from matplotlib import rcParams
 
-# 中文字体设置
-rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei', 'DejaVu Sans']
+# 中文字体设置（直接加载字体文件）
+_cache_dir = matplotlib.get_cachedir()
+for f in glob.glob(os.path.join(_cache_dir, '*')):
+    try:
+        if os.path.isfile(f): os.remove(f)
+        elif os.path.isdir(f): shutil.rmtree(f, ignore_errors=True)
+    except Exception: pass
+
+_font_paths = glob.glob(r'C:\Windows\Fonts\msyh*.ttc')
+_font_paths += glob.glob(r'C:\Windows\Fonts\simhei.ttf')
+_font_paths += glob.glob(r'C:\Windows\Fonts\simsun*.ttc')
+if _font_paths:
+    for fp in _font_paths:
+        try: fm.fontManager.addfont(fp)
+        except Exception: pass
+    rcParams['font.sans-serif'] = [fm.FontProperties(fname=_font_paths[0]).get_name(), 'DejaVu Sans']
 rcParams['axes.unicode_minus'] = False
 
 
