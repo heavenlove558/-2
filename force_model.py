@@ -71,6 +71,28 @@ def calc_liquid_inertia(pump_diameter_m, rod_diameter_m, pump_depth, fluid_level
     return (F_p - A_r) * pm.RHO_L * a_max * eps * liquid_column
 
 
+def calc_tail_pipe_inertia(stroke, stroke_rate, tail_pipe_length=None):
+    """
+    尾管液柱惯性力，N（仅上冲程有效）。
+
+    固定阀以下尾管内液体随柱塞上移而加速，
+    其惯性通过固定阀传到柱塞→杆柱。
+    """
+    if tail_pipe_length is None:
+        tail_pipe_length = pm.TAIL_PIPE_LENGTH
+    if tail_pipe_length <= 0:
+        return 0.0
+
+    omega = 2.0 * np.pi * stroke_rate / 60.0
+    a_max = omega**2 * stroke / 2.0
+
+    # 尾管内液体质量
+    A_tail = pm.tubing_inner_area()  # 假设尾管与油管同径
+    mass = pm.RHO_L * A_tail * tail_pipe_length
+
+    return mass * a_max
+
+
 def calc_plunger_friction(pump_diameter_mm):
     """柱塞与泵筒摩擦力（经验公式），N"""
     return 0.94 * pump_diameter_mm / (pm.DELTA * 1000.0) - 140.0
@@ -209,10 +231,11 @@ def solve_axial_forces(trajectory, rod_diameters, pump_diameter_m,
         pump_diameter_m, rod_diameters[-1], pump_depth, fluid_level)
     liquid_inertia = calc_liquid_inertia(
         pump_diameter_m, rod_diameters[-1], pump_depth, fluid_level, stroke, stroke_rate)
+    tail_inertia = calc_tail_pipe_inertia(stroke, stroke_rate)
     F_v = calc_valve_resistance(pump_diameter_m, stroke, stroke_rate)
     v_rod = calc_rod_velocity(stroke, stroke_rate)
 
-    P_0_up = F_cp + liquid_load  # 上冲程底端（忽略液体惯性，量级小）
+    P_0_up = F_cp + liquid_load + tail_inertia  # 上冲程底端（含尾管液柱惯性）
     P_0_down = -(F_cp + F_v)     # 下冲程底端
 
     # ====== 第一遍：不计杆管摩擦，粗略迭代 ======
