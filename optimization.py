@@ -158,37 +158,53 @@ def optimize_rod_diameter(rod_diameters_mm, stress_amp, sigma_b=793.0):
 def equal_strength_design(pump_diameter_m, fluid_depth_m, stroke_m, stroke_rate,
                           rod_grades_mm, sigma_b=793.0):
     """
-    等强度杆柱组合设计。
+    等强度杆柱组合设计（三级）。
 
-    基于论文(4-11)-(4-16)的等强度原则：各段应力范围比 PL 尽量接近。
-    用简化算法推荐实用的杆柱组合。
+    rod_grades_mm 按 底部→顶部 顺序排列，如 [22, 19, 22] 表示:
+      - 底部(近泵): 22mm — 抗压、抗屈曲
+      - 中部: 19mm — 减轻重量
+      - 顶部(近井口): 22mm — 抗最大拉力
 
     返回:
         list of (直径mm, 长度m, 比例%)
     """
-    D_p = pump_diameter_m * 1000.0
     L_f = fluid_depth_m
-
-    # 杆径从小到大
-    dias = sorted(rod_grades_mm)
-    n = len(dias)
+    n = len(rod_grades_mm)
 
     if n == 1:
-        return [(dias[0], L_f, 100.0)]
+        return [(rod_grades_mm[0], L_f, 100.0)]
 
-    # 每段分配总长的 1/n 作为初始，然后按截面积反比调整
-    # 原理：细杆用在上段（应力小），粗杆用在下段（应力大）
-    A_list = [pm.rod_cross_section(d / 1000.0) for d in dias]
+    # 三级设计：按截面积分配，粗杆短、细杆长
+    # 底部→顶部顺序保持（不排序）
+    A_list = [pm.rod_cross_section(d / 1000.0) for d in rod_grades_mm]
+
+    if n == 2:
+        # 二级：底部粗杆短(~40%)，顶部细杆长(~60%)
+        w_bottom = 0.40
+        w_top = 0.60
+        return [
+            (rod_grades_mm[0], round(L_f * w_bottom, 1), round(w_bottom * 100, 1)),
+            (rod_grades_mm[1], round(L_f * w_top, 1), round(w_top * 100, 1)),
+        ]
+
+    # 三级: 底部粗杆~15%, 中部细杆~50%, 顶部粗杆~35%
+    # 参照论文[1]推荐的 Ф22×15% + Ф19×50% + Ф22×35%
+    unique_dias = set(rod_grades_mm)
+    if len(unique_dias) == 2:
+        # 两径三级（如 [22, 19, 22]）
+        thick = max(unique_dias)
+        thin = min(unique_dias)
+        fractions = [0.15, 0.50, 0.35]  # 底部:中部:顶部
+        result = []
+        for i, (d, frac) in enumerate(zip(rod_grades_mm, fractions)):
+            result.append((d, round(L_f * frac, 1), round(frac * 100, 1)))
+        return result
+
+    # 三径三级: 按截面积反比分配
     inv_A = [1.0 / a for a in A_list]
     total_inv = sum(inv_A)
-    fractions = [ia / total_inv for ia in inv_A]
-
-    # 最粗的杆在泵端（比例最小），最细的在井口端
-    fractions = fractions[::-1]  # 反转: 粗杆短, 细杆长
-
+    fractions = [ia / total_inv for ia in inv_A[::-1]]  # 粗杆短→反转
     result = []
-    for d, frac in zip(sorted(dias), fractions):
-        L = L_f * frac
-        result.append((d, round(L, 1), round(frac * 100, 1)))
-
+    for d, frac in zip(rod_grades_mm, fractions):
+        result.append((d, round(L_f * frac, 1), round(frac * 100, 1)))
     return result
