@@ -58,7 +58,8 @@ def run_analysis(params=None, output_dir='output'):
         pump_diameter_m=params['pump_diameter'],
         stroke=params['stroke'],
         stroke_rate=params['stroke_rate'],
-        fluid_depth=params['fluid_level'],
+        pump_depth=params['pump_depth'],
+        fluid_level=params['fluid_level'],
         pump_efficiency=params['pump_efficiency'],
     )
 
@@ -149,7 +150,8 @@ def run_sensitivity_pump_diameter():
             pump_diameter_m=dia,
             stroke=params['stroke'],
             stroke_rate=params['stroke_rate'],
-            fluid_depth=params['fluid_level'],
+            pump_depth=params['pump_depth'],
+            fluid_level=params['fluid_level'],
             pump_efficiency=params['pump_efficiency'],
         )
         neutral = fm.find_neutral_point(trajectory['depths'], result['P_down'])

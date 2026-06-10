@@ -41,14 +41,20 @@ def calc_rod_inertia(diameter_m, dl, stroke, stroke_rate):
     return pm.RHO_R * A * dl * a_max
 
 
-def calc_liquid_load(pump_diameter_m, rod_diameter_m, fluid_depth):
-    """液柱载荷（作用在柱塞上），N"""
+def calc_liquid_load(pump_diameter_m, rod_diameter_m, pump_depth, fluid_level):
+    """
+    液柱载荷（作用在柱塞上），N
+
+    上冲程时，柱塞上方液柱高度 = 泵深 - 动液面。
+    液柱重量通过柱塞作用在抽油杆底端。
+    """
     F_p = pm.pump_plunger_area(pump_diameter_m)
     A_r = pm.rod_cross_section(rod_diameter_m)
-    return (F_p - A_r) * pm.RHO_L * pm.G * fluid_depth
+    liquid_column = max(0.0, pump_depth - fluid_level)  # 泵上液柱高度
+    return (F_p - A_r) * pm.RHO_L * pm.G * liquid_column
 
 
-def calc_liquid_inertia(pump_diameter_m, rod_diameter_m, fluid_depth,
+def calc_liquid_inertia(pump_diameter_m, rod_diameter_m, pump_depth, fluid_level,
                          stroke, stroke_rate):
     """液柱惯性力，N"""
     F_p = pm.pump_plunger_area(pump_diameter_m)
@@ -60,8 +66,9 @@ def calc_liquid_inertia(pump_diameter_m, rod_diameter_m, fluid_depth,
 
     # 过流面积扩大系数
     eps = (F_t - A_r) / (F_t - F_p) if (F_t - F_p) > 1e-12 else 1.0
+    liquid_column = max(0.0, pump_depth - fluid_level)
 
-    return (F_p - A_r) * pm.RHO_L * a_max * eps * fluid_depth
+    return (F_p - A_r) * pm.RHO_L * a_max * eps * liquid_column
 
 
 def calc_plunger_friction(pump_diameter_mm):
@@ -175,7 +182,7 @@ def calc_support_force(P_i, P_next, F_net_weight, alpha1, phi1, alpha2, phi2):
 # ============================================================
 
 def solve_axial_forces(trajectory, rod_diameters, pump_diameter_m,
-                       stroke, stroke_rate, fluid_depth,
+                       stroke, stroke_rate, pump_depth, fluid_level,
                        pump_efficiency=0.43):
     """
     分段迭代计算上下冲程轴向力分布。
@@ -199,9 +206,9 @@ def solve_axial_forces(trajectory, rod_diameters, pump_diameter_m,
     # ---- 边界条件 ----
     F_cp = calc_plunger_friction(pump_diameter_mm)
     liquid_load = calc_liquid_load(
-        pump_diameter_m, rod_diameters[-1], fluid_depth)
+        pump_diameter_m, rod_diameters[-1], pump_depth, fluid_level)
     liquid_inertia = calc_liquid_inertia(
-        pump_diameter_m, rod_diameters[-1], fluid_depth, stroke, stroke_rate)
+        pump_diameter_m, rod_diameters[-1], pump_depth, fluid_level, stroke, stroke_rate)
     F_v = calc_valve_resistance(pump_diameter_m, stroke, stroke_rate)
     v_rod = calc_rod_velocity(stroke, stroke_rate)
 

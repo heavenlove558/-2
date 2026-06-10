@@ -210,7 +210,8 @@ def equal_strength_design(pump_diameter_m, fluid_depth_m, stroke_m, stroke_rate,
     return result
 
 
-def optimize_compression_free(pump_diameter_m, fluid_depth_m, stroke_m, stroke_rate,
+def optimize_compression_free(pump_diameter_m, pump_depth_m, fluid_level_m,
+                               stroke_m, stroke_rate,
                                rod_grades_mm, trajectory, grade='D', pump_efficiency=0.43,
                                max_iter=20, step=0.02):
     """
@@ -225,7 +226,7 @@ def optimize_compression_free(pump_diameter_m, fluid_depth_m, stroke_m, stroke_r
     import force_model as fm
 
     base_combo = equal_strength_design(
-        pump_diameter_m, fluid_depth_m, stroke_m, stroke_rate, rod_grades_mm)
+        pump_diameter_m, pump_depth_m, stroke_m, stroke_rate, rod_grades_mm)
 
     if len(base_combo) < 3:
         return base_combo, 0, 0.0
@@ -242,7 +243,7 @@ def optimize_compression_free(pump_diameter_m, fluid_depth_m, stroke_m, stroke_r
     best_min_p = -1e9
 
     for it in range(max_iter):
-        total_len = fluid_depth_m
+        total_len = pump_depth_m
         cum = 0.0
         rod_diameters = np.zeros(len(trajectory['depths']))
         for idx, (d, frac) in enumerate(zip(dias, fractions)):
@@ -259,7 +260,8 @@ def optimize_compression_free(pump_diameter_m, fluid_depth_m, stroke_m, stroke_r
             trajectory, rod_diameters,
             pump_diameter_m=pump_diameter_m,
             stroke=stroke_m, stroke_rate=stroke_rate,
-            fluid_depth=fluid_depth_m, pump_efficiency=pump_efficiency)
+            pump_depth=pump_depth_m, fluid_level=fluid_level_m,
+            pump_efficiency=pump_efficiency)
 
         min_p = result['P_down'].min()
         current_combo = [(dias[i], round(fractions[i] * total_len, 1),

@@ -913,7 +913,8 @@ class SuckerRodApp:
                         pump_diameter_m=dia,
                         stroke=prod['stroke'],
                         stroke_rate=prod['stroke_rate'],
-                        fluid_depth=prod['fluid_level'],
+                        pump_depth=prod['pump_depth'],
+                        fluid_level=prod['fluid_level'],
                         pump_efficiency=prod['pump_efficiency'],
                     )
                     neutral = fm.find_neutral_point(trajectory['depths'], result['P_down'])
@@ -933,7 +934,8 @@ class SuckerRodApp:
                 dias_mm = [22, 19, 22]
                 prod_params = prod
                 opt_combo, opt_iter, opt_min_p = opt.optimize_compression_free(
-                    prod_params['pump_diameter'], prod_params['fluid_level'],
+                    prod_params['pump_diameter'], prod_params['pump_depth'],
+                    prod_params['fluid_level'],
                     prod_params['stroke'], prod_params['stroke_rate'],
                     dias_mm, trajectory,
                     pump_efficiency=prod_params['pump_efficiency'])
