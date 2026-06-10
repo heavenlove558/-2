@@ -900,14 +900,17 @@ class SuckerRodApp:
                     'rod_combo': rod_combo,
                 }
 
-                # 等强度推荐（三级：底部22mm → 中部19mm → 顶部22mm）
+                # 无压缩优化（三级：底部22mm -> 中部19mm -> 顶部22mm）
                 dias_mm = [22, 19, 22]
                 prod_params = prod
-                opt_combo = opt.equal_strength_design(
+                opt_combo, opt_iter, opt_min_p = opt.optimize_compression_free(
                     prod_params['pump_diameter'], prod_params['fluid_level'],
                     prod_params['stroke'], prod_params['stroke_rate'],
-                    dias_mm)
+                    dias_mm, trajectory,
+                    pump_efficiency=prod_params['pump_efficiency'])
                 self._opt_data['opt_combo'] = opt_combo
+                self._opt_data['opt_iter'] = opt_iter
+                self._opt_data['opt_min_p'] = opt_min_p
 
                 # 主线程中更新UI
                 self.root.after(0, lambda: self._safe_update(trajectory, all_results, rod_combo))
@@ -1115,14 +1118,17 @@ class SuckerRodApp:
                      '{:.0f}%'.format(p), ha='center', fontsize=8)
         ax3.legend(fontsize=7)
 
-        # 右下: 等强度推荐
+        # 右下: 杆柱优化推荐
         ax4 = fig.add_subplot(224)
         ax4.axis('off')
         opt_combo = self._opt_data.get('opt_combo', [])
-        lines = ['等强度优化推荐杆柱组合:', '']
+        opt_iter = self._opt_data.get('opt_iter', 0)
+        opt_min_p = self._opt_data.get('opt_min_p', 0)
+        status = '无受压' if opt_min_p >= 0 else '仍有 {:.1f}kN 受压'.format(abs(opt_min_p)/1000)
+        lines = ['杆柱优化推荐 (迭代{}次, {}):'.format(opt_iter, status), '']
         total = sum(L for _, L, _ in opt_combo)
         for d, L, pct in opt_combo:
-            lines.append('  {}mm × {:.0f}m ({:.0f}%)'.format(d, L, pct))
+            lines.append('  {}mm x {:.0f}m ({:.0f}%)'.format(d, L, pct))
         lines.append('')
         lines.append('总长: {:.0f} m'.format(total))
         lines.append('')
@@ -1136,7 +1142,7 @@ class SuckerRodApp:
             lines.append('应力范围比 PL: {:.0f}%'.format(
                 fatigue[max_sa_label]['PL']))
         ax4.text(0.05, 0.95, '\n'.join(lines), transform=ax4.transAxes,
-                 fontsize=9, verticalalignment='top', fontfamily='monospace')
+                 fontsize=8, verticalalignment='top', fontfamily='monospace')
 
         fig.suptitle('杆柱优化分析 ({}mm泵, D级杆)'.format(dia_label),
                      fontsize=12, fontweight='bold')

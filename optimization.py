@@ -208,3 +208,72 @@ def equal_strength_design(pump_diameter_m, fluid_depth_m, stroke_m, stroke_rate,
     for d, frac in zip(rod_grades_mm, fractions):
         result.append((d, round(L_f * frac, 1), round(frac * 100, 1)))
     return result
+
+
+def optimize_compression_free(pump_diameter_m, fluid_depth_m, stroke_m, stroke_rate,
+                               rod_grades_mm, trajectory, grade='D', pump_efficiency=0.43,
+                               max_iter=20, step=0.02):
+    """
+    迭代增加底部加重段长度，直至下冲程轴向力全部 ≥ 0（无受压）。
+
+    每次将底部比例 +step（从中部扣除），重新运行力学模型，
+    直到 min(P_down) >= 0 或达到最大迭代次数。
+
+    返回:
+        combo, iterations, min_P_down
+    """
+    import force_model as fm
+
+    base_combo = equal_strength_design(
+        pump_diameter_m, fluid_depth_m, stroke_m, stroke_rate, rod_grades_mm)
+
+    if len(base_combo) < 3:
+        return base_combo, 0, 0.0
+
+    dias = [d for d, _, _ in base_combo]
+    if len(set(dias)) < 2:
+        return base_combo, 0, 0.0
+
+    fractions = [pct / 100.0 for _, _, pct in base_combo]
+    thin_dia = min(dias)
+    thin_idx = dias.index(thin_dia)
+    bottom_idx = 0
+    best_combo = base_combo
+    best_min_p = -1e9
+
+    for it in range(max_iter):
+        total_len = fluid_depth_m
+        cum = 0.0
+        rod_diameters = np.zeros(len(trajectory['depths']))
+        for idx, (d, frac) in enumerate(zip(dias, fractions)):
+            seg_len = frac * total_len
+            seg_start = cum
+            seg_end = cum + seg_len
+            mask = (trajectory['depths'] >= seg_start) & (trajectory['depths'] < seg_end)
+            rod_diameters[mask] = d / 1000.0
+            cum += seg_len
+        rod_diameters[trajectory['depths'] >= cum - 1e-6] = dias[-1] / 1000.0
+        rod_diameters[rod_diameters < 1e-6] = max(dias) / 1000.0
+
+        result = fm.solve_axial_forces(
+            trajectory, rod_diameters,
+            pump_diameter_m=pump_diameter_m,
+            stroke=stroke_m, stroke_rate=stroke_rate,
+            fluid_depth=fluid_depth_m, pump_efficiency=pump_efficiency)
+
+        min_p = result['P_down'].min()
+        current_combo = [(dias[i], round(fractions[i] * total_len, 1),
+                          round(fractions[i] * 100, 1)) for i in range(len(dias))]
+
+        if min_p >= 0:
+            return current_combo, it + 1, min_p
+
+        if fractions[bottom_idx] + step <= 1.0 and fractions[thin_idx] - step >= 0.02:
+            fractions[bottom_idx] += step
+            fractions[thin_idx] -= step
+            best_combo = current_combo
+            best_min_p = min_p
+        else:
+            break
+
+    return best_combo, max_iter, best_min_p
