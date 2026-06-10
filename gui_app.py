@@ -648,7 +648,6 @@ class SuckerRodApp:
             ('动液面深度 m', '1465'),
             ('冲程 m', '3.0'),
             ('冲次 min-1', '5.0'),
-            ('泵效 %', '43'),
         ]
         self.prod_entries = {}
 
@@ -660,6 +659,12 @@ class SuckerRodApp:
             entry.insert(0, default)
             entry.grid(row=row, column=col * 2 + 1, sticky='w', padx=5, pady=4)
             self.prod_entries[label] = entry
+
+        # 泵效自动计算显示
+        self.pump_eff_label = ttk.Label(grid_frame,
+                                         text='泵效(自动计算): --%',
+                                         foreground='blue', font=('', 9, 'italic'))
+        self.pump_eff_label.grid(row=5, column=0, columnspan=4, sticky='w', padx=5, pady=8)
 
     # ============================================================
     # Tab5: 其他参数
@@ -779,7 +784,21 @@ class SuckerRodApp:
             prod['fluid_level'] = float(self.prod_entries['动液面深度 m'].get())
             prod['stroke'] = float(self.prod_entries['冲程 m'].get())
             prod['stroke_rate'] = float(self.prod_entries['冲次 min-1'].get())
-            prod['pump_efficiency'] = float(self.prod_entries['泵效 %'].get()) / 100.0
+            # 泵效 = 实际产液量 / 理论排量 × 100%
+            # 理论排量 = 1440 × πD²/4 × S × N  (m³/d)
+            liquid_rate = prod['liquid_rate']  # m³/d
+            D_p = prod['pump_diameter']  # m
+            S = prod['stroke']  # m
+            N = prod['stroke_rate']  # min⁻¹
+            theoretical_rate = 1440.0 * np.pi * D_p**2 / 4.0 * S * N
+            if theoretical_rate > 0:
+                eff = liquid_rate / theoretical_rate * 100.0
+            else:
+                eff = 43.0  # 默认值
+            prod['pump_efficiency'] = eff / 100.0
+            # 更新显示
+            self.pump_eff_label.config(
+                text='泵效(自动计算): {:.1f}% (理论排量 {:.1f} m3/d)'.format(eff, theoretical_rate))
         except ValueError as e:
             messagebox.showerror('输入错误', f'生产参数格式错误:\n{str(e)}')
             return None
