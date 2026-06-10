@@ -351,6 +351,7 @@ class SuckerRodApp:
 
         # 模拟结果
         self.sim_results = {}
+        self._opt_data = {}
 
         self._build_ui()
 
