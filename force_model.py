@@ -389,3 +389,69 @@ def build_rod_diameter_array(depths, pump_depth, rod_combo):
     rod_diameters[rod_diameters < 1e-6] = max(d[0] for d in rod_combo)
 
     return rod_diameters
+
+
+# ============================================================
+# 上下冲程转换时的惯性接触力
+# ============================================================
+
+def calc_inertial_contact(trajectory, rod_diameters, stroke, stroke_rate):
+    """
+    计算上下冲程转换瞬间（下冲程启动）由于惯性力导致的
+    杆柱与油管壁接触力。
+
+    原理：
+      - 下冲程启动时，驴头从最高点加速下行
+      - 杆柱顶部承受全部杆柱质量 × 加速度的惯性压缩
+      - 此压缩力在井眼弯曲段产生横向接触力：N = F × K
+      - 接触力最大处即冲程转换瞬间最易发生弯曲的位置
+
+    返回:
+      dict: 包含 F_inertial, N_contact, N_per_m 等数组
+    """
+    depths = trajectory['depths']
+    K = trajectory['K']           # 全角变化率 rad/m
+    dl = depths[1] - depths[0] if len(depths) > 1 else 5.0
+    n = len(depths)
+
+    # 每个节点的杆柱质量
+    mass_per_node = np.zeros(n)
+    for i in range(n):
+        A = pm.rod_cross_section(rod_diameters[i])
+        mass_per_node[i] = pm.RHO_R * A * dl
+
+    # 最大加速度（简谐运动近似）
+    omega = 2.0 * np.pi * stroke_rate / 60.0
+    a_max = omega**2 * stroke / 2.0
+
+    # 从顶部向下累积质量 → 每个深度的惯性压缩力
+    # F_inertial(z) = sum(质量从0到z) × a_max
+    mass_cum = np.cumsum(mass_per_node)  # 从顶向底累积
+    F_inertial = mass_cum * a_max         # N, 压缩为正
+
+    # 横向接触力（N）= 轴向力 × 曲率 × 段长
+    N_per_m = F_inertial * K              # N/m（每米接触力）
+    N_contact = N_per_m * dl              # N（每段总接触力）
+
+    # 最大惯性接触力位置
+    max_idx = np.argmax(N_contact)
+    max_contact = N_contact[max_idx]
+    max_depth = depths[max_idx]
+
+    # 与静态下冲程支持力对比
+    ratio = np.zeros(n)
+    for i in range(n):
+        # 简化：N_down 需要从外部传入，这里只计算比值
+        # 在 GUI 中传入 result['N_rt_down'] 后对比
+        pass
+
+    return {
+        'depths': depths,
+        'F_inertial': F_inertial,       # 惯性压缩力 (N)
+        'N_per_m': N_per_m,              # 每米接触力 (N/m)
+        'N_contact': N_contact,          # 每段接触力 (N)
+        'max_contact': max_contact,
+        'max_depth': max_depth,
+        'a_max': a_max,
+    }
+

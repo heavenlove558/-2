@@ -394,6 +394,7 @@ class SuckerRodApp:
         self._build_load_tab()
         self._build_dogleg_tab()
         self._build_wear_risk_tab()
+        self._build_inertial_tab()
         self._build_optimization_tab()
 
         # ---- 底部按钮 ----
@@ -736,6 +737,11 @@ class SuckerRodApp:
 
         self._create_output_canvas(self.wear_risk_frame, 'wear_risk')
 
+    def _build_inertial_tab(self):
+        frame = ttk.Frame(self.output_notebook)
+        self.output_notebook.add(frame, text=' 惯性接触力 ')
+        self._create_output_canvas(frame, 'inertial')
+
     def _build_optimization_tab(self):
         frame = ttk.Frame(self.output_notebook)
         self.output_notebook.add(frame, text=' 杆柱优化 ')
@@ -921,6 +927,12 @@ class SuckerRodApp:
                     result['neutral_depth'] = neutral
                     all_results[f'{dia*1000:.0f}'] = result
 
+                # 惯性接触力分析
+                inertial = fm.calc_inertial_contact(
+                    trajectory, rod_diameters,
+                    prod['stroke'], prod['stroke_rate'])
+                self._opt_data['inertial'] = inertial
+
                 # 疲劳分析
                 import optimization as opt
                 fatigue = opt.analyze_fatigue(all_results, rod_diameters, grade='D')
@@ -1090,6 +1102,65 @@ class SuckerRodApp:
                      fontsize=12, fontweight='bold')
         fig.tight_layout()
         self.canvas_wear_risk.draw()
+
+    def _draw_inertial(self):
+        """绘制冲程转换时的惯性接触力"""
+        if not hasattr(self, '_opt_data') or not self._opt_data:
+            return
+        inertial = self._opt_data.get('inertial')
+        if inertial is None:
+            return
+
+        depths = inertial['depths']
+        fig = self.fig_inertial
+        fig.clear()
+
+        # 左: 惯性压缩力 vs 井深
+        ax1 = fig.add_subplot(131)
+        ax1.plot(inertial['F_inertial'] / 1000.0, depths, 'b-', linewidth=1.2)
+        ax1.fill_betweenx(depths, 0, inertial['F_inertial'] / 1000.0,
+                           alpha=0.15, color='blue')
+        ax1.invert_yaxis()
+        ax1.set_xlabel('惯性压缩力 / kN')
+        ax1.set_ylabel('井深 / m')
+        ax1.set_title('惯性压缩力 (下冲程启动)')
+        ax1.grid(True, alpha=0.3)
+
+        # 中: 每米接触力 vs 井深
+        ax2 = fig.add_subplot(132)
+        ax2.plot(inertial['N_per_m'], depths, 'r-', linewidth=1.2)
+        ax2.fill_betweenx(depths, 0, inertial['N_per_m'],
+                           alpha=0.15, color='red')
+        ax2.invert_yaxis()
+        ax2.set_xlabel('接触力 / (N/m)')
+        ax2.set_title('惯性接触力密度')
+        ax2.grid(True, alpha=0.3)
+        # 标出最大值
+        max_idx = np.argmax(inertial['N_per_m'])
+        ax2.annotate('{:.1f} N/m @ {:.0f}m'.format(
+            inertial['N_per_m'][max_idx], depths[max_idx]),
+            xy=(inertial['N_per_m'][max_idx], depths[max_idx]),
+            fontsize=8, color='darkred')
+
+        # 右: 与狗腿度对比
+        ax3 = fig.add_subplot(133)
+        ax3.plot(inertial['N_per_m'], depths, 'r-', linewidth=1.2, label='惯性接触力密度')
+        # 双y轴: 狗腿度
+        ax3b = ax3.twiny()
+        if hasattr(self, '_wear_trajectory'):
+            K = self._wear_trajectory['K_deg30m']
+            ax3b.plot(K, depths, 'b--', linewidth=0.8, alpha=0.5, label='狗腿度')
+            ax3b.set_xlabel('狗腿度 / (°/30m)', color='blue')
+        ax3.invert_yaxis()
+        ax3.set_xlabel('接触力 / (N/m)', color='red')
+        ax3.set_title('惯性接触力 vs 狗腿度')
+        ax3.grid(True, alpha=0.3)
+        ax3.legend(fontsize=7, loc='lower right')
+
+        fig.suptitle('冲程转换惯性接触力分析 (a_max={:.3f} m/s2)'.format(inertial['a_max']),
+                     fontsize=11, fontweight='bold')
+        fig.tight_layout()
+        self.canvas_inertial.draw()
 
     def _draw_optimization(self):
         """绘制杆柱优化图表：应力幅值 + 疲劳寿命 + 等强度推荐"""
@@ -1293,6 +1364,7 @@ class SuckerRodApp:
         if self.opt_pump_var.get() not in dias:
             self.opt_pump_var.set(dias[-1])
         self._draw_wear_risk()
+        self._draw_inertial()
         self._draw_optimization()
 
 
