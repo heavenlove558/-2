@@ -786,6 +786,12 @@ class SuckerRodApp:
             prod['liquid_rate'] = float(self.prod_entries['产液量 m3/d'].get())
             prod['oil_rate'] = float(self.prod_entries['产油量 t/d'].get())
             prod['water_cut'] = float(self.prod_entries['含水率 %'].get()) / 100.0
+            # 根据含水率自动计算混合液密度和粘度
+            rho_mix, mu_mix = pm.fluid_properties(prod['water_cut'])
+            pm.RHO_L = rho_mix
+            pm.MU_OIL = mu_mix
+            prod['rho_mix'] = rho_mix
+            prod['mu_mix'] = mu_mix
             prod['pump_diameter'] = float(self.prod_entries['泵径 mm'].get()) / 1000.0  # m
             prod['pump_depth'] = float(self.prod_entries['泵挂深度 m'].get())
             prod['fluid_level'] = float(self.prod_entries['动液面深度 m'].get())
@@ -805,7 +811,8 @@ class SuckerRodApp:
             prod['pump_efficiency'] = eff / 100.0
             # 更新显示
             self.pump_eff_label.config(
-                text='泵效(自动计算): {:.1f}% (理论排量 {:.1f} m3/d)'.format(eff, theoretical_rate))
+                text='泵效:{:.1f}% | 理论排量:{:.1f} m3/d | 混合液密度:{:.0f} kg/m3 | 粘度:{:.4f} Pa.s'.format(
+                    eff, theoretical_rate, rho_mix, mu_mix))
         except ValueError as e:
             messagebox.showerror('输入错误', f'生产参数格式错误:\n{str(e)}')
             return None

@@ -10,11 +10,14 @@ import numpy as np
 G = 9.81            # 重力加速度，m/s²
 E_STEEL = 2.10e11   # 钢弹性模量，Pa（210 GPa）
 RHO_R = 7850.0      # 抽油杆密度，kg/m³
-RHO_L = 1000.0      # 井液密度，kg/m³（默认水）
-MU_OIL = 0.005      # 井液动力粘度，Pa·s
-F_FRICTION = 0.15   # 杆管摩擦系数
-DELTA = 0.053e-3    # 柱塞配合间隙，m（0.053 mm）
-D_TUBE = 0.062      # 油管内径，m（62 mm）
+# 流体单项物性
+RHO_OIL = 850.0      # 原油密度，kg/m³
+RHO_WATER = 1000.0   # 水密度，kg/m³
+MU_OIL = 0.050       # 原油动力粘度，Pa·s（典型值）
+MU_WATER = 0.001     # 水动力粘度，Pa·s
+F_FRICTION = 0.15    # 杆管摩擦系数
+DELTA = 0.053e-3     # 柱塞配合间隙，m（0.053 mm）
+D_TUBE = 0.062       # 油管内径，m（62 mm）
 TAIL_PIPE_LENGTH = 30.0  # 尾管长度，m（泵以下）
 
 # ============================================================
@@ -74,3 +77,21 @@ def deg_to_rad(deg):
 
 def rad_to_deg(rad):
     return np.array(rad) * 180.0 / np.pi
+
+
+def fluid_properties(water_cut):
+    """
+    根据含水率计算混合液密度和粘度。
+
+    密度: ρ_mix = f_w × ρ_water + (1-f_w) × ρ_oil  (线性混合)
+    粘度: 含水>50%时水为连续相(μ≈μ_water)，含水<50%时油为连续相(μ≈μ_oil)
+          使用线性插值过渡避免不连续跳变。
+
+    返回: (rho_mix kg/m³, mu_mix Pa·s)
+    """
+    fw = max(0.0, min(1.0, water_cut))
+    rho_mix = fw * RHO_WATER + (1.0 - fw) * RHO_OIL
+    # 粘度对数插值（油水混合粘度常用方法）
+    import numpy as np
+    mu_mix = np.exp(fw * np.log(MU_WATER) + (1.0 - fw) * np.log(MU_OIL))
+    return rho_mix, mu_mix
